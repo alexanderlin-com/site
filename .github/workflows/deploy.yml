@@ -1,0 +1,64 @@
+name: Build & Deploy (stage)
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: alexanderlin-com-site
+  REGION: us-central1
+  AR_REPO: site
+  SERVICE_NAME: site-stage
+
+jobs:
+  build-push-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    concurrency:
+      group: cloud-run-stage
+      cancel-in-progress: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Auth to Google Cloud (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/881541971325/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: ci-deployer@alexanderlin-com-site.iam.gserviceaccount.com
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - name: Build Docker image
+        run: |
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/site:${{ github.sha }}"
+          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+          docker build -t "$IMAGE" .
+
+      - name: Trivy scan (non-blocking)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          format: 'table'
+          exit-code: '0'
+          vuln-type: 'os,library'
+
+      - name: Push image
+        run: docker push "$IMAGE"
+
+      - name: Deploy to Cloud Run (stage)
+        run: |
+          gcloud run deploy "$SERVICE_NAME" \
+            --image "$IMAGE" \
+            --region "$REGION" \
+            --allow-unauthenticated \
+            --port 8080 \
+            --project "$PROJECT_ID"
