@@ -1,4 +1,4 @@
-// middleware.ts
+// middleware.ts (repo root)
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 

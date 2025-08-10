@@ -14,3 +14,8 @@ variable "repo_name"  {
     type = string  
     default = "site" 
     } # Artifact Registry repo
+
+variable "alert_email" {
+  description = "Where to send uptime alerts"
+  type        = string
+}
