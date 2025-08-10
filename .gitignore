@@ -51,3 +51,8 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 !.terraform.lock.hcl
+# Terraform cache/state
+**/.terraform/**
+*.tfstate
+*.tfstate.*
+!.terraform.lock.hcl
