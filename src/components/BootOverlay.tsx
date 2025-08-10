@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { BOOT, INTRO_ENABLED } from "@/lib/config";
 
 declare global {
   interface Window {
@@ -8,11 +9,11 @@ declare global {
 }
 
 const STORAGE_KEY = "al:intro:skip";
-const TARGET_MS = 1400;
-const MIN_LINES = 28, MAX_LINES = 80;
-const MAX_CHARS = 120;
 
 export default function BootOverlay({ onDone }: { onDone: () => void }) {
+  // Skip entirely if disabled by config/env
+  if (!INTRO_ENABLED) return null;
+
   const [visible, setVisible] = useState(() =>
     typeof window === "undefined" ? true : !localStorage.getItem(STORAGE_KEY)
   );
@@ -23,14 +24,17 @@ export default function BootOverlay({ onDone }: { onDone: () => void }) {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const timerRef = useRef<number | null>(null);
 
+  // Scrolling container + lock if user scrolls up
   const containerRef = useRef<HTMLDivElement | null>(null);
   const userLockedRef = useRef(false);
 
+  // Respect reduced motion
   const reduced = useMemo(() => {
     if (typeof window === "undefined") return false;
     return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
   }, []);
 
+  // Load /public/boot.log.txt (fallback to short canned lines)
   useEffect(() => {
     if (!visible) return;
     let cancelled = false;
@@ -43,7 +47,7 @@ export default function BootOverlay({ onDone }: { onDone: () => void }) {
           .split("\n")
           .map((l) => l.trimEnd())
           .filter(Boolean)
-          .map((l) => (l.length > MAX_CHARS ? l.slice(0, MAX_CHARS) + "…" : l));
+          .map((l) => (l.length > BOOT.maxChars ? l.slice(0, BOOT.maxChars) + "…" : l));
         setRaw(lines.length ? lines : fallbackLines);
       } catch {
         setRaw(fallbackLines);
@@ -52,19 +56,22 @@ export default function BootOverlay({ onDone }: { onDone: () => void }) {
     return () => { cancelled = true; };
   }, [visible]);
 
+  // Downsample to BOOT.minLines..BOOT.maxLines
   const display = useMemo(() => {
     const src = raw ?? fallbackLines;
-    const n = Math.max(MIN_LINES, Math.min(MAX_LINES, src.length));
+    const n = Math.max(BOOT.minLines, Math.min(BOOT.maxLines, src.length));
     if (src.length <= n) return src;
     const step = (src.length - 1) / (n - 1);
     return Array.from({ length: n }, (_, i) => src[Math.round(i * step)]);
   }, [raw]);
 
+  // Per-line interval based on total duration
   const STEP_MS = useMemo(
-    () => Math.max(25, Math.min(80, Math.floor(TARGET_MS / Math.max(1, display.length)))),
+    () => Math.max(25, Math.min(80, Math.floor(BOOT.durationMs / Math.max(1, display.length)))),
     [display.length]
   );
 
+  // Detect user scroll; pause auto-scroll if not at bottom
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -76,6 +83,7 @@ export default function BootOverlay({ onDone }: { onDone: () => void }) {
     return () => el.removeEventListener("scroll", onScroll);
   }, []);
 
+  // Advance lines; Esc to skip; respect reduced motion
   useEffect(() => {
     if (!visible) return;
     if (reduced) return finish();
@@ -103,10 +111,10 @@ export default function BootOverlay({ onDone }: { onDone: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, reduced, STEP_MS, sound, display.length]);
 
+  // Auto-scroll to bottom after each paint unless user scrolled up
   useEffect(() => {
     const el = containerRef.current;
-    if (!el) return;
-    if (userLockedRef.current) return;
+    if (!el || userLockedRef.current) return;
     requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
   }, [idx]);
 
@@ -149,6 +157,7 @@ export default function BootOverlay({ onDone }: { onDone: () => void }) {
 {display.slice(0, Math.max(1, Math.min(idx, display.length))).join("\n")}
         </pre>
       </div>
+
       <div className="absolute right-4 top-4 flex gap-2">
         <button
           onClick={() => { ensureAudio(); setSound((s) => !s); }}
