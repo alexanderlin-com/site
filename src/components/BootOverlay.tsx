@@ -3,16 +3,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { BOOT, INTRO_ENABLED } from "@/lib/config";
 
 declare global {
-  interface Window {
-    webkitAudioContext?: typeof AudioContext;
-  }
+  interface Window { webkitAudioContext?: typeof AudioContext }
 }
 
 const STORAGE_KEY = "al:intro:skip";
 
 export default function BootOverlay({ onDone }: { onDone: () => void }) {
-  // Skip entirely if disabled by config/env
-  if (!INTRO_ENABLED) return null;
+  // IMPORTANT: no early returns before hooks
+  const disabled = !INTRO_ENABLED;
 
   const [visible, setVisible] = useState(() =>
     typeof window === "undefined" ? true : !localStorage.getItem(STORAGE_KEY)
@@ -23,20 +21,20 @@ export default function BootOverlay({ onDone }: { onDone: () => void }) {
 
   const audioCtxRef = useRef<AudioContext | null>(null);
   const timerRef = useRef<number | null>(null);
-
-  // Scrolling container + lock if user scrolls up
   const containerRef = useRef<HTMLDivElement | null>(null);
   const userLockedRef = useRef(false);
 
-  // Respect reduced motion
+  // If disabled, immediately notify parent that we're "done"
+  useEffect(() => { if (disabled) onDone(); }, [disabled, onDone]);
+
   const reduced = useMemo(() => {
     if (typeof window === "undefined") return false;
     return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
   }, []);
 
-  // Load /public/boot.log.txt (fallback to short canned lines)
+  // Load boot log
   useEffect(() => {
-    if (!visible) return;
+    if (disabled || !visible) return;
     let cancelled = false;
     (async () => {
       try {
@@ -49,14 +47,12 @@ export default function BootOverlay({ onDone }: { onDone: () => void }) {
           .filter(Boolean)
           .map((l) => (l.length > BOOT.maxChars ? l.slice(0, BOOT.maxChars) + "…" : l));
         setRaw(lines.length ? lines : fallbackLines);
-      } catch {
-        setRaw(fallbackLines);
-      }
+      } catch { setRaw(fallbackLines); }
     })();
     return () => { cancelled = true; };
-  }, [visible]);
+  }, [disabled, visible]);
 
-  // Downsample to BOOT.minLines..BOOT.maxLines
+  // Downsample
   const display = useMemo(() => {
     const src = raw ?? fallbackLines;
     const n = Math.max(BOOT.minLines, Math.min(BOOT.maxLines, src.length));
@@ -65,13 +61,12 @@ export default function BootOverlay({ onDone }: { onDone: () => void }) {
     return Array.from({ length: n }, (_, i) => src[Math.round(i * step)]);
   }, [raw]);
 
-  // Per-line interval based on total duration
   const STEP_MS = useMemo(
     () => Math.max(25, Math.min(80, Math.floor(BOOT.durationMs / Math.max(1, display.length)))),
     [display.length]
   );
 
-  // Detect user scroll; pause auto-scroll if not at bottom
+  // Track whether user scrolled up
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -83,9 +78,9 @@ export default function BootOverlay({ onDone }: { onDone: () => void }) {
     return () => el.removeEventListener("scroll", onScroll);
   }, []);
 
-  // Advance lines; Esc to skip; respect reduced motion
+  // Advance lines
   useEffect(() => {
-    if (!visible) return;
+    if (disabled || !visible) return;
     if (reduced) return finish();
 
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && skip();
@@ -109,9 +104,9 @@ export default function BootOverlay({ onDone }: { onDone: () => void }) {
       window.removeEventListener("keydown", onKey);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, reduced, STEP_MS, sound, display.length]);
+  }, [disabled, visible, reduced, STEP_MS, sound, display.length]);
 
-  // Auto-scroll to bottom after each paint unless user scrolled up
+  // Auto-scroll newest line into view
   useEffect(() => {
     const el = containerRef.current;
     if (!el || userLockedRef.current) return;
@@ -121,9 +116,7 @@ export default function BootOverlay({ onDone }: { onDone: () => void }) {
   function ensureAudio() {
     if (audioCtxRef.current) return;
     const Ctor: typeof AudioContext | undefined =
-      typeof window !== "undefined"
-        ? window.AudioContext ?? window.webkitAudioContext
-        : undefined;
+      typeof window !== "undefined" ? window.AudioContext ?? window.webkitAudioContext : undefined;
     if (!Ctor) return;
     audioCtxRef.current = new Ctor();
   }
@@ -134,21 +127,20 @@ export default function BootOverlay({ onDone }: { onDone: () => void }) {
     if (ctx.state === "suspended") await ctx.resume();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
-    osc.type = "square";
-    osc.frequency.value = 1400;
+    osc.type = "square"; osc.frequency.value = 1400;
     const now = ctx.currentTime;
     gain.gain.setValueAtTime(0.0001, now);
     gain.gain.exponentialRampToValueAtTime(0.2, now + 0.005);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.035);
     osc.connect(gain).connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + 0.04);
+    osc.start(now); osc.stop(now + 0.04);
   }
 
   function skip() { localStorage.setItem(STORAGE_KEY, "1"); finish(); }
   function finish() { setVisible(false); onDone(); }
 
-  if (!visible) return null;
+  // Return AFTER hooks so rules of hooks are satisfied
+  if (disabled || !visible) return null;
 
   return (
     <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 bg-black text-cyan-200">
