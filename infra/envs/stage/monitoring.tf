@@ -64,3 +64,34 @@ resource "google_monitoring_alert_policy" "uptime_down" {
 
   notification_channels = [google_monitoring_notification_channel.email.name]
 }
+
+# Alert if Cloud Run returns >=5 total 5xx in 5 minutes (sum across regions/revisions)
+resource "google_monitoring_alert_policy" "cloudrun_5xx" {
+  display_name = "5XX SPIKE: site-stage"
+  severity     = "WARNING"
+  combiner     = "OR"
+
+  documentation {
+    content   = "Runbook: https://github.com/alexanderlin-com/site/blob/main/ops/OPS.md#5xx\nInspect Cloud Run logs, recent deploys; rollback if needed."
+    mime_type = "text/markdown"
+  }
+
+  conditions {
+    display_name = ">=5 errors over 5m"
+    condition_threshold {
+      filter          = "metric.type=\"run.googleapis.com/request_count\" AND resource.type=\"cloud_run_revision\" AND resource.label.\"service_name\"=\"site-stage\" AND metric.label.\"response_code_class\"=\"5xx\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 4
+      duration        = "300s"
+
+      aggregations {
+        alignment_period     = "60s"
+        per_series_aligner   = "ALIGN_DELTA"   # convert cumulative counter to per-minute deltas
+        cross_series_reducer = "REDUCE_SUM"
+        group_by_fields      = ["resource.service_name"]
+      }
+    }
+  }
+
+  notification_channels = [google_monitoring_notification_channel.email.name]
+}
