@@ -91,18 +91,23 @@ export default function BootOverlay({ onDone }: { onDone: () => void }) {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && skip();
     window.addEventListener("keydown", onKey);
 
-    timerRef.current = window.setInterval(() => {
-      setIdx((i) => {
-        const next = i + 1;
-        if (sound) tick();
-        if (next >= display.length) {
-          if (timerRef.current) window.clearInterval(timerRef.current);
-          window.setTimeout(finish, 220);
-          return display.length;
-        }
-        return next;
-      });
-    }, STEP_MS);
+timerRef.current = window.setInterval(() => {
+  setIdx((i) => {
+    const next = i + 1;
+    if (sound) {
+      // ensure context exists/running even if user toggled mid-play
+      ensureAudio();
+      tick();
+    }
+    if (next >= display.length) {
+      if (timerRef.current) window.clearInterval(timerRef.current);
+      window.setTimeout(finish, 220);
+      return display.length;
+    }
+    return next;
+  });
+}, STEP_MS);
+
 
     return () => {
       if (timerRef.current) window.clearInterval(timerRef.current);
@@ -118,13 +123,19 @@ export default function BootOverlay({ onDone }: { onDone: () => void }) {
     requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
   }, [idx]);
 
-  function ensureAudio() {
-    if (audioCtxRef.current) return;
-    const Ctor: typeof AudioContext | undefined =
-      typeof window !== "undefined" ? window.AudioContext ?? window.webkitAudioContext : undefined;
-    if (!Ctor) return;
+function ensureAudio() {
+  const Ctor: typeof AudioContext | undefined =
+    typeof window !== "undefined" ? window.AudioContext ?? window.webkitAudioContext : undefined;
+  if (!Ctor) return;
+
+  if (!audioCtxRef.current) {
     audioCtxRef.current = new Ctor();
   }
+  // Make sure it’s actually running; resume within the click handler context
+  if (audioCtxRef.current.state !== "running") {
+    void audioCtxRef.current.resume();
+  }
+}
 
   async function tick() {
     const ctx = audioCtxRef.current;
