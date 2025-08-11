@@ -6,18 +6,23 @@ declare global {
   interface Window { webkitAudioContext?: typeof AudioContext }
 }
 
-const STORAGE_KEY = "al:intro:skip";
+const SKIP_KEY = "al:intro:skip";
+const SOUND_KEY = "al:intro:sound";
 
 export default function BootOverlay({ onDone }: { onDone: () => void }) {
   // IMPORTANT: no early returns before hooks
   const disabled = !INTRO_ENABLED;
 
   const [visible, setVisible] = useState(() =>
-    typeof window === "undefined" ? true : !localStorage.getItem(STORAGE_KEY)
+    typeof window === "undefined" ? true : !localStorage.getItem(SKIP_KEY)
   );
   const [raw, setRaw] = useState<string[] | null>(null);
   const [idx, setIdx] = useState(0);
-  const [sound, setSound] = useState(false);
+  const [sound, setSound] = useState<boolean>(() => {
+  if (typeof window === "undefined") return false;
+  return localStorage.getItem(SOUND_KEY) === "1";
+});
+
 
   const audioCtxRef = useRef<AudioContext | null>(null);
   const timerRef = useRef<number | null>(null);
@@ -136,8 +141,21 @@ export default function BootOverlay({ onDone }: { onDone: () => void }) {
     osc.start(now); osc.stop(now + 0.04);
   }
 
-  function skip() { localStorage.setItem(STORAGE_KEY, "1"); finish(); }
+  function skip() { localStorage.setItem(SKIP_KEY, "1"); finish(); }
   function finish() { setVisible(false); onDone(); }
+
+
+  useEffect(() => {
+  const onPrefs = () => {
+    // update sound
+    const s = localStorage.getItem(SOUND_KEY) === "1";
+    setSound(s);
+    // skip now if user disabled intro at startup
+    if (localStorage.getItem(SKIP_KEY)) finish();
+  };
+  window.addEventListener("al:intro:prefs", onPrefs);
+  return () => window.removeEventListener("al:intro:prefs", onPrefs);
+}, []);
 
   // Return AFTER hooks so rules of hooks are satisfied
   if (disabled || !visible) return null;
@@ -152,7 +170,17 @@ export default function BootOverlay({ onDone }: { onDone: () => void }) {
 
       <div className="absolute right-4 top-4 flex gap-2">
         <button
-          onClick={() => { ensureAudio(); setSound((s) => !s); }}
+          onClick={() => {
+              ensureAudio();
+              setSound((s) => {
+              const next = !s;
+              localStorage.setItem(SOUND_KEY, next ? "1" : "0");
+              window.dispatchEvent(new Event("al:intro:prefs"));
+              return next;
+              });
+              }}       
+
+
           className="rounded border border-cyan-400/40 px-3 py-1 text-xs font-mono tracking-wide hover:bg-cyan-400/10 focus:outline-none focus:ring focus:ring-cyan-400/40"
           aria-pressed={sound}
         >
@@ -177,3 +205,4 @@ const fallbackLines = [
   "[  OK  ] Started Getty on tty1.",
   "[  OK  ] Started Daily Cleanup Tasks.",
 ];
+
