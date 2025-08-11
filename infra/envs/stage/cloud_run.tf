@@ -4,15 +4,13 @@ resource "google_cloud_run_v2_service" "site" {
 
   template {
     containers {
-      image = "gcr.io/cloudrun/hello"  # CI will replace this
+      image = "gcr.io/cloudrun/hello" # CI replaces this
       ports { container_port = 8080 }
     }
-    # inside template { ... }
-scaling {
-  min_instance_count = 1
-  max_instance_count = 5
-}
-
+    scaling {
+      min_instance_count = 0
+      max_instance_count = 3
+    }
   }
 
   # Let CI change the image without Terraform drift
@@ -33,5 +31,6 @@ resource "google_cloud_run_v2_service_iam_member" "public" {
   member   = "allUsers"
 }
 
-output "cloud_run_url" { value = google_cloud_run_v2_service.site.uri }
-
+output "cloud_run_url" {
+  value = google_cloud_run_v2_service.site.uri
+}
