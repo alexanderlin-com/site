@@ -57,3 +57,35 @@ override.tf.json
 *.tfstate.*
 !.terraform.lock.hcl
 .DS_Store
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+._*
+Thumbs.db
+.node_repl_history
+
+# JS tooling caches
+.eslintcache
+.npm/
+.turbo/
+.parcel-cache/
+
+# Docker miscellany
+*.pid
+
+# Terraform extras (you already ignore state & *.tfvars)
+*.tfplan
+crash.*.log
+.terraform.d/
+.terraformrc
+
+# Local certs/keys that sometimes sneak in
+*.key
+*.crt
+*.p12
+*.pfx
+
+# gcloud ADC file if someone ever drops it in the repo by mistake
+application_default_credentials.json
